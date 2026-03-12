@@ -1,9 +1,27 @@
 from flask import Flask, jsonify, request, redirect, url_for, render_template_string
+import sqlite3
+import os
 
 app = Flask(__name__)
+DB_NAME = 'lost_found.db'
 
-# Temporary database
-lost_items = []
+# Initialize database
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL,
+            location TEXT,
+            status TEXT DEFAULT 'Lost'
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
 
 # Home route
 @app.route('/')
@@ -22,10 +40,13 @@ def home():
 # API: Get all lost items
 @app.route('/items', methods=['GET'])
 def get_items():
-    return jsonify({
-        "total_items": len(lost_items),
-        "items": lost_items
-    })
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('SELECT * FROM items')
+    rows = c.fetchall()
+    conn.close()
+    items = [{"id": r[0], "name": r[1], "description": r[2], "location": r[3], "status": r[4]} for r in rows]
+    return jsonify({"total_items": len(items), "items": items})
 
 # API: Report lost item
 @app.route('/report', methods=['POST'])
@@ -34,29 +55,44 @@ def report_item():
     if not data or "name" not in data or "description" not in data:
         return jsonify({"error": "Missing required fields"}), 400
 
-    item = {
-        "id": len(lost_items) + 1,
-        "name": data["name"],
-        "description": data["description"],
-        "location": data.get("location", "Unknown"),
-        "status": "Lost"
-    }
-    lost_items.append(item)
-    return jsonify({"message": "Item reported successfully", "item": item}), 201
+    name = data["name"]
+    description = data["description"]
+    location = data.get("location", "Unknown")
+
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('INSERT INTO items (name, description, location) VALUES (?, ?, ?)', (name, description, location))
+    conn.commit()
+    item_id = c.lastrowid
+    conn.close()
+
+    return jsonify({
+        "message": "Item reported successfully",
+        "item": {"id": item_id, "name": name, "description": description, "location": location, "status": "Lost"}
+    }), 201
 
 # API: Search lost items
 @app.route('/search', methods=['GET'])
 def search_item():
     keyword = request.args.get('q', '').lower()
-    results = [
-        item for item in lost_items
-        if keyword in item['name'].lower() or keyword in item['description'].lower()
-    ]
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('SELECT * FROM items WHERE LOWER(name) LIKE ? OR LOWER(description) LIKE ?', (f'%{keyword}%', f'%{keyword}%'))
+    rows = c.fetchall()
+    conn.close()
+    results = [{"id": r[0], "name": r[1], "description": r[2], "location": r[3], "status": r[4]} for r in rows]
     return jsonify({"keyword": keyword, "results": results})
 
-# Admin dashboard using render_template_string
+# Admin dashboard
 @app.route('/admin')
 def admin_dashboard():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('SELECT * FROM items')
+    rows = c.fetchall()
+    conn.close()
+    items = [{"id": r[0], "name": r[1], "description": r[2], "location": r[3], "status": r[4]} for r in rows]
+
     template = """
     <!DOCTYPE html>
     <html>
@@ -102,26 +138,29 @@ def admin_dashboard():
     </body>
     </html>
     """
-    return render_template_string(template, items=lost_items)
+    return render_template_string(template, items=items)
 
-# Admin: mark item as found
+# Admin: mark as found
 @app.route('/admin/found/<int:item_id>')
 def mark_found(item_id):
-    for item in lost_items:
-        if item["id"] == item_id:
-            item["status"] = "Found"
-            break
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('UPDATE items SET status = "Found" WHERE id = ?', (item_id,))
+    conn.commit()
+    conn.close()
     return redirect(url_for('admin_dashboard'))
 
 # Admin: delete item
 @app.route('/admin/delete/<int:item_id>')
 def delete_item(item_id):
-    global lost_items
-    lost_items = [item for item in lost_items if item["id"] != item_id]
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('DELETE FROM items WHERE id = ?', (item_id,))
+    conn.commit()
+    conn.close()
     return redirect(url_for('admin_dashboard'))
 
 # Run the app
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
