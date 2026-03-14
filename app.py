@@ -5,7 +5,6 @@ import os
 app = Flask(__name__)
 DB_NAME = 'lost_found.db'
 
-# Initialize database
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -23,124 +22,172 @@ def init_db():
 
 init_db()
 
-# Home route
+# --- HTML TEMPLATES ---
+
+BASE_STYLES = """
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+    body { background-color: #f8f9fa; }
+    .navbar { background-color: #0d6efd; }
+    .card { border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .badge-lost { background-color: #dc3545; }
+    .badge-found { background-color: #198754; }
+</style>
+"""
+
+NAVBAR = """
+<nav class="navbar navbar-expand-lg navbar-dark mb-4">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="/">Campus Lost & Found</a>
+        <div class="navbar-nav ms-auto">
+            <a class="nav-link text-white" href="/admin">Admin Dashboard</a>
+        </div>
+    </div>
+</nav>
+"""
+
+# --- ROUTES ---
+
 @app.route('/')
 def home():
-    return jsonify({
-        "message": "Welcome to the Campus Lost and Found API",
-        "status": "running",
-        "endpoints": [
-            "/items",
-            "/report",
-            "/search",
-            "/admin"
-        ]
-    })
-
-# API: Get all lost items
-@app.route('/items', methods=['GET'])
-def get_items():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute('SELECT * FROM items')
-    rows = c.fetchall()
-    conn.close()
-    items = [{"id": r[0], "name": r[1], "description": r[2], "location": r[3], "status": r[4]} for r in rows]
-    return jsonify({"total_items": len(items), "items": items})
-
-# API: Report lost item
-@app.route('/report', methods=['POST'])
-def report_item():
-    data = request.get_json()
-    if not data or "name" not in data or "description" not in data:
-        return jsonify({"error": "Missing required fields"}), 400
-
-    name = data["name"]
-    description = data["description"]
-    location = data.get("location", "Unknown")
-
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute('INSERT INTO items (name, description, location) VALUES (?, ?, ?)', (name, description, location))
-    conn.commit()
-    item_id = c.lastrowid
+    c.execute('SELECT * FROM items WHERE status = "Lost" ORDER BY id DESC')
+    items = c.fetchall()
     conn.close()
 
-    return jsonify({
-        "message": "Item reported successfully",
-        "item": {"id": item_id, "name": name, "description": description, "location": location, "status": "Lost"}
-    }), 201
-
-# API: Search lost items
-@app.route('/search', methods=['GET'])
-def search_item():
-    keyword = request.args.get('q', '').lower()
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute('SELECT * FROM items WHERE LOWER(name) LIKE ? OR LOWER(description) LIKE ?', (f'%{keyword}%', f'%{keyword}%'))
-    rows = c.fetchall()
-    conn.close()
-    results = [{"id": r[0], "name": r[1], "description": r[2], "location": r[3], "status": r[4]} for r in rows]
-    return jsonify({"keyword": keyword, "results": results})
-
-# Admin dashboard
-@app.route('/admin')
-def admin_dashboard():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute('SELECT * FROM items')
-    rows = c.fetchall()
-    conn.close()
-    items = [{"id": r[0], "name": r[1], "description": r[2], "location": r[3], "status": r[4]} for r in rows]
-
-    template = """
+    template = f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Admin Dashboard - Lost & Found</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            table { border-collapse: collapse; width: 100%; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-            th { background-color: #f2f2f2; }
-            a { text-decoration: none; color: white; padding: 5px 10px; border-radius: 3px; }
-            .found { background-color: green; }
-            .delete { background-color: red; }
-        </style>
+        <title>Home - Lost & Found</title>
+        {BASE_STYLES}
     </head>
     <body>
-    <h1>Lost & Found Admin Dashboard</h1>
-    <table>
-        <tr>
-            <th>ID</th>
-            <th>Name</th>
-            <th>Description</th>
-            <th>Location</th>
-            <th>Status</th>
-            <th>Actions</th>
-        </tr>
-        {% for item in items %}
-        <tr>
-            <td>{{ item.id }}</td>
-            <td>{{ item.name }}</td>
-            <td>{{ item.description }}</td>
-            <td>{{ item.location }}</td>
-            <td>{{ item.status }}</td>
-            <td>
-                {% if item.status != 'Found' %}
-                <a class="found" href="{{ url_for('mark_found', item_id=item.id) }}">Mark Found</a>
-                {% endif %}
-                <a class="delete" href="{{ url_for('delete_item', item_id=item.id) }}">Delete</a>
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
+        {NAVBAR}
+        <div class="container">
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card p-4 mb-4">
+                        <h4 class="mb-3">Report Lost Item</h4>
+                        <form action="/report-ui" method="POST">
+                            <div class="mb-3">
+                                <label class="form-label">Item Name</label>
+                                <input type="text" name="name" class="form-control" placeholder="e.g. Blue Umbrella" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Location Lost</label>
+                                <input type="text" name="location" class="form-control" placeholder="e.g. Library 2nd Floor">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Description</label>
+                                <textarea name="description" class="form-control" rows="3" required></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">Post Report</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="col-md-8">
+                    <h4 class="mb-3">Recent Lost Items</h4>
+                    {% if not items %}
+                        <div class="alert alert-info">No items reported lost yet.</div>
+                    {% endif %}
+                    <div class="row">
+                        {{% for item in items %}}
+                        <div class="col-md-6 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <span class="badge badge-lost mb-2">LOST</span>
+                                    <h5 class="card-title">{{{{ item[1] }}}}</h5>
+                                    <p class="card-text text-muted small"><strong>Location:</strong> {{{{ item[3] }}}}</p>
+                                    <p class="card-text">{{{{ item[2] }}}}</p>
+                                </div>
+                            </div>
+                        </div>
+                        {{% endfor %}}
+                    </div>
+                </div>
+            </div>
+        </div>
     </body>
     </html>
     """
     return render_template_string(template, items=items)
 
-# Admin: mark as found
+# Helper route for the UI form
+@app.route('/report-ui', methods=['POST'])
+def report_ui():
+    name = request.form.get('name')
+    description = request.form.get('description')
+    location = request.form.get('location', 'Unknown')
+
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('INSERT INTO items (name, description, location) VALUES (?, ?, ?)', (name, description, location))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('home'))
+
+@app.route('/admin')
+def admin_dashboard():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('SELECT * FROM items ORDER BY id DESC')
+    items = c.fetchall()
+    conn.close()
+
+    template = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Admin - Lost & Found</title>
+        {BASE_STYLES}
+    </head>
+    <body>
+        {NAVBAR}
+        <div class="container">
+            <h2 class="mb-4">Admin Management</h2>
+            <div class="card">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th>
+                            <th>Item</th>
+                            <th>Location</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{% for item in items %}}
+                        <tr>
+                            <td>{{{{ item[0] }}}}</td>
+                            <td><strong>{{{{ item[1] }}}}</strong><br><small>{{{{ item[2] }}}}</small></td>
+                            <td>{{{{ item[3] }}}}</td>
+                            <td>
+                                <span class="badge {{{{ 'badge-found' if item[4] == 'Found' else 'badge-lost' }}}}">
+                                    {{{{ item[4] }}}}
+                                </span>
+                            </td>
+                            <td>
+                                {{% if item[4] != 'Found' %}}
+                                <a href="/admin/found/{{{{ item[0] }}}}" class="btn btn-sm btn-success">Mark Found</a>
+                                {{% endif %}}
+                                <a href="/admin/delete/{{{{ item[0] }}}}" class="btn btn-sm btn-danger" onclick="return confirm('Delete this report?')">Delete</a>
+                            </td>
+                        </tr>
+                        {{% endfor %}}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return render_template_string(template, items=items)
+
+# (Existing mark_found and delete_item routes go here...)
 @app.route('/admin/found/<int:item_id>')
 def mark_found(item_id):
     conn = sqlite3.connect(DB_NAME)
@@ -150,7 +197,6 @@ def mark_found(item_id):
     conn.close()
     return redirect(url_for('admin_dashboard'))
 
-# Admin: delete item
 @app.route('/admin/delete/<int:item_id>')
 def delete_item(item_id):
     conn = sqlite3.connect(DB_NAME)
@@ -160,7 +206,5 @@ def delete_item(item_id):
     conn.close()
     return redirect(url_for('admin_dashboard'))
 
-# Run the app
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(debug=True, port=5000)
