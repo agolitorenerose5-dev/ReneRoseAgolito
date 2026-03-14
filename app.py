@@ -22,25 +22,28 @@ def init_db():
 
 init_db()
 
-# --- HTML TEMPLATES ---
-
-BASE_STYLES = """
+# --- CSS & JS Components (Reusable) ---
+BASE_HEAD = """
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
-    body { background-color: #f8f9fa; }
-    .navbar { background-color: #0d6efd; }
-    .card { border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .badge-lost { background-color: #dc3545; }
-    .badge-found { background-color: #198754; }
+    body { background-color: #f4f7f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .navbar { background-color: #2c3e50; }
+    .card { border: none; border-radius: 12px; transition: 0.3s; }
+    .card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+    .btn-primary { background-color: #3498db; border: none; }
+    .badge-lost { background-color: #e74c3c; }
+    .badge-found { background-color: #2ecc71; }
 </style>
 """
 
 NAVBAR = """
 <nav class="navbar navbar-expand-lg navbar-dark mb-4">
     <div class="container">
-        <a class="navbar-brand fw-bold" href="/">Campus Lost & Found</a>
+        <a class="navbar-brand fw-bold" href="/">📍 Campus Lost & Found</a>
         <div class="navbar-nav ms-auto">
-            <a class="nav-link text-white" href="/admin">Admin Dashboard</a>
+            <a class="nav-link btn btn-outline-light btn-sm px-3" href="/admin">Admin Login</a>
         </div>
     </div>
 </nav>
@@ -60,48 +63,58 @@ def home():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Home - Lost & Found</title>
-        {BASE_STYLES}
+        <title>Home | Campus Lost & Found</title>
+        {BASE_HEAD}
     </head>
     <body>
         {NAVBAR}
         <div class="container">
             <div class="row">
                 <div class="col-md-4">
-                    <div class="card p-4 mb-4">
-                        <h4 class="mb-3">Report Lost Item</h4>
+                    <div class="card p-4 shadow-sm mb-4">
+                        <h4 class="fw-bold text-dark">Report an Item</h4>
+                        <p class="text-muted small">Help your fellow students find their belongings.</p>
+                        <hr>
                         <form action="/report-ui" method="POST">
                             <div class="mb-3">
-                                <label class="form-label">Item Name</label>
-                                <input type="text" name="name" class="form-control" placeholder="e.g. Blue Umbrella" required>
+                                <label class="form-label fw-semibold">What did you lose?</label>
+                                <input type="text" name="name" class="form-control" placeholder="e.g. Mechanical Pencil" required>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">Location Lost</label>
-                                <input type="text" name="location" class="form-control" placeholder="e.g. Library 2nd Floor">
+                                <label class="form-label fw-semibold">Where was it last seen?</label>
+                                <input type="text" name="location" class="form-control" placeholder="e.g. IT Building Room 102">
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">Description</label>
-                                <textarea name="description" class="form-control" rows="3" required></textarea>
+                                <label class="form-label fw-semibold">Description</label>
+                                <textarea name="description" class="form-control" rows="3" placeholder="Colors, brand, or unique marks..." required></textarea>
                             </div>
-                            <button type="submit" class="btn btn-primary w-100">Post Report</button>
+                            <button type="submit" class="btn btn-primary w-100 fw-bold">Post to Board</button>
                         </form>
                     </div>
                 </div>
 
                 <div class="col-md-8">
-                    <h4 class="mb-3">Recent Lost Items</h4>
-                    {% if not items %}
-                        <div class="alert alert-info">No items reported lost yet.</div>
-                    {% endif %}
+                    <h3 class="fw-bold mb-4">Active Lost Reports</h3>
                     <div class="row">
+                        {{% if not items %}}
+                            <div class="col-12">
+                                <div class="alert alert-light border text-center py-5">
+                                    <h5 class="text-muted">No items reported lost yet. Check back later!</h5>
+                                </div>
+                            </div>
+                        {{% endif %}}
+                        
                         {{% for item in items %}}
-                        <div class="col-md-6 mb-3">
-                            <div class="card h-100">
+                        <div class="col-md-6 mb-4">
+                            <div class="card h-100 shadow-sm">
                                 <div class="card-body">
                                     <span class="badge badge-lost mb-2">LOST</span>
-                                    <h5 class="card-title">{{{{ item[1] }}}}</h5>
-                                    <p class="card-text text-muted small"><strong>Location:</strong> {{{{ item[3] }}}}</p>
-                                    <p class="card-text">{{{{ item[2] }}}}</p>
+                                    <h5 class="card-title fw-bold text-primary text-capitalize">{{{{ item[1] }}}}</h5>
+                                    <p class="mb-1 text-muted small"><strong>📍 Location:</strong> {{{{ item[3] }}}}</p>
+                                    <p class="card-text text-secondary mt-2">{{{{ item[2] }}}}</p>
+                                </div>
+                                <div class="card-footer bg-white border-0">
+                                    <small class="text-muted">Reported ID: #{{{{ item[0] }}}}</small>
                                 </div>
                             </div>
                         </div>
@@ -115,12 +128,11 @@ def home():
     """
     return render_template_string(template, items=items)
 
-# Helper route for the UI form
 @app.route('/report-ui', methods=['POST'])
 def report_ui():
     name = request.form.get('name')
     description = request.form.get('description')
-    location = request.form.get('location', 'Unknown')
+    location = request.form.get('location', 'Not Specified')
 
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -141,45 +153,55 @@ def admin_dashboard():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Admin - Lost & Found</title>
-        {BASE_STYLES}
+        <title>Admin Dashboard</title>
+        {BASE_HEAD}
     </head>
     <body>
         {NAVBAR}
         <div class="container">
-            <h2 class="mb-4">Admin Management</h2>
-            <div class="card">
-                <table class="table table-hover mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>ID</th>
-                            <th>Item</th>
-                            <th>Location</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {{% for item in items %}}
-                        <tr>
-                            <td>{{{{ item[0] }}}}</td>
-                            <td><strong>{{{{ item[1] }}}}</strong><br><small>{{{{ item[2] }}}}</small></td>
-                            <td>{{{{ item[3] }}}}</td>
-                            <td>
-                                <span class="badge {{{{ 'badge-found' if item[4] == 'Found' else 'badge-lost' }}}}">
-                                    {{{{ item[4] }}}}
-                                </span>
-                            </td>
-                            <td>
-                                {{% if item[4] != 'Found' %}}
-                                <a href="/admin/found/{{{{ item[0] }}}}" class="btn btn-sm btn-success">Mark Found</a>
-                                {{% endif %}}
-                                <a href="/admin/delete/{{{{ item[0] }}}}" class="btn btn-sm btn-danger" onclick="return confirm('Delete this report?')">Delete</a>
-                            </td>
-                        </tr>
-                        {{% endfor %}}
-                    </tbody>
-                </table>
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2 class="fw-bold">System Management</h2>
+                <span class="badge bg-dark">Total Items: {{{{ items|length }}}}</span>
+            </div>
+            <div class="card shadow-sm">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ID</th>
+                                <th>Item Details</th>
+                                <th>Location</th>
+                                <th>Status</th>
+                                <th class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{% for item in items %}}
+                            <tr>
+                                <td class="text-muted">#{{{{ item[0] }}}}</td>
+                                <td>
+                                    <div class="fw-bold">{{{{ item[1] }}}}</div>
+                                    <small class="text-secondary">{{{{ item[2] }}}}</small>
+                                </td>
+                                <td>{{{{ item[3] }}}}</td>
+                                <td>
+                                    <span class="badge {{{{ 'badge-found' if item[4] == 'Found' else 'badge-lost' }}}}">
+                                        {{{{ item[4] }}}}
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    <div class="btn-group">
+                                        {{% if item[4] != 'Found' %}}
+                                        <a href="/admin/found/{{{{ item[0] }}}}" class="btn btn-sm btn-success px-3">Mark Found</a>
+                                        {{% endif %}}
+                                        <a href="/admin/delete/{{{{ item[0] }}}}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Permanently delete this record?')">Delete</a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {{% endfor %}}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </body>
@@ -187,7 +209,7 @@ def admin_dashboard():
     """
     return render_template_string(template, items=items)
 
-# (Existing mark_found and delete_item routes go here...)
+# --- Functional Routes for Admin ---
 @app.route('/admin/found/<int:item_id>')
 def mark_found(item_id):
     conn = sqlite3.connect(DB_NAME)
